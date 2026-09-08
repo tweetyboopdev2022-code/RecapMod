@@ -1,0 +1,45 @@
+name: Build RecapMod
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build KoboRoot.tgz using NickelTC
+      run: |
+        # Create build directory
+        mkdir -p build
+        cd build
+        
+        # Run the build inside NickelTC Docker container
+        docker run --rm \
+          -v $(pwd)/..:/workspace \
+          -w /workspace \
+          ghcr.io/pgaskin/nickeltc:1.0 \
+          bash -c "make clean && make koboroot"
+        
+        # Verify the package was created
+        if [ -f KoboRoot.tgz ]; then
+          echo "Build successful!"
+          cp KoboRoot.tgz ../KoboRoot.tgz
+        else
+          echo "Build failed - KoboRoot.tgz not found"
+          exit 1
+        fi
+        
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: RecapMod-KoboRoot
+        path: KoboRoot.tgz
