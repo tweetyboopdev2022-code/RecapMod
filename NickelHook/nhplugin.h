@@ -1,7 +1,7 @@
 #ifndef NHPLUGIN_H
 #define NHPLUGIN_H
 
-#include <QPluginInterface>
+#include <qplugin.h>
 #include <QMainWindow>
 #include <QWidget>
 
