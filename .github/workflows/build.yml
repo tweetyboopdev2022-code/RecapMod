@@ -1,32 +1,10 @@
-name: Build RecapMod
+- name: Build custom build container
+        run: docker build -t nickeltc-qt5 .
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Build NickelHook Plugin with Qt5 Headers
-      run: |
-        docker run --rm \
-          --user root \
-          -v $(pwd):/workspace \
-          -w /workspace \
-          ghcr.io/pgaskin/nickeltc:1.0 \
-          bash -c "dpkg --add-architecture armhf && \
-                   apt-get update && \
-                   apt-get install -y --no-install-recommends qtbase5-dev:armhf libqt5widgets5:armhf && \
-                   make clean && make koboroot"
-        
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: RecapMod-KoboRoot
-        path: KoboRoot.tgz
+      - name: Build NickelHook Plugin
+        run: |
+          docker run --rm \
+            -v $(pwd):/workspace \
+            -w /workspace \
+            nickeltc-qt5 \
+            bash -c "make clean && make koboroot"
