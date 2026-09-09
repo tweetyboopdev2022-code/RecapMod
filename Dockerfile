@@ -2,6 +2,7 @@ FROM ghcr.io/pgaskin/nickeltc:1.0
 
 USER root
 
+# Fix EOL Debian Buster repositories and install Qt5 dependencies
 RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
     sed -i 's/security.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
     sed -i '/buster-updates/d' /etc/apt/sources.list && \
@@ -10,5 +11,9 @@ RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
     apt-get install -y --no-install-recommends \
         g++-arm-linux-gnueabihf \
         qtbase5-dev:armhf \
-        libqt5widgets5:armhf && \
+        libqt5widgets5:armhf \
+        libqt5core5a:armhf \
+        libqt5gui5:armhf \
+        qtdeclarative5-dev:armhf \
+        libqt5quick5:armhf && \
     rm -rf /var/lib/apt/lists/*

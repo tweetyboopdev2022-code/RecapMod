@@ -1,16 +1,15 @@
-CXX := arm-linux-gnueabihf-g++
-CXXFLAGS := -I. -INickelHook -fPIC -Wall -Wextra -std=c++11
+include NickelHook/nh.mk
 
-librecapmod.so: src/recapmod.cc
-	$(CXX) $(CXXFLAGS) -shared -o $@ $<
+PKG_NAME = recapmod
+TARGET   = librecapmod.so
 
-build: librecapmod.so
+SRCS += src/recapmod.cc
+
+koboroot: $(TARGET)
+	mkdir -p KoboRoot/usr/local/recapmod
+	cp $(TARGET) KoboRoot/usr/local/recapmod/
+	tar -czf KoboRoot.tgz -C KoboRoot usr
+	rm -rf KoboRoot
 
 clean:
-	rm -rf KoboRoot* librecapmod.so
-
-koboroot: build
-	rm -rf KoboRoot
-	mkdir -p KoboRoot/usr/lib
-	cp librecapmod.so KoboRoot/usr/lib/
-	tar -czf KoboRoot.tgz KoboRoot
+	rm -rf KoboRoot* $(TARGET) *.o *.moc
