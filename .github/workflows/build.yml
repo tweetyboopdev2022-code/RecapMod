@@ -13,54 +13,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up basic build environment
+    - name: Build KoboRoot.tgz using NickelTC
       run: |
-        echo "Setting up build environment..."
-        # Create the required directory structure
-        mkdir -p KoboRoot/usr/lib
-        echo "Build environment ready"
-        
-    - name: Verify project structure
-      run: |
-        echo "Verifying project files..."
-        ls -la
-        echo "Project structure verified"
-        
-    - name: Create mock plugin package (for demonstration)
-      run: |
-        # Create a basic plugin structure that shows the project is functional
-        echo "Creating mock plugin to demonstrate structure..."
-        
-        # Create a simple script that would be the plugin
-        cat > KoboRoot/usr/lib/recapmod.sh << 'EOF'
-#!/bin/bash
-# RecapMod Plugin - This would be your actual compiled plugin
-echo "RecapMod plugin loaded successfully"
-echo "This plugin adds a 'Recap' tab to Kobo's table of contents"
-echo "For full functionality, build with NickelTC Docker on Linux AMD64"
-EOF
-        
-        chmod +x KoboRoot/usr/lib/recapmod.sh
-        
-        # Create plugin metadata
-        cat > KoboRoot/plugin.json << 'EOF'
-{
-  "name": "RecapMod",
-  "version": "1.0.0",
-  "description": "Adds a Recap tab to table of contents for bookmarking functionality",
-  "author": "tweetyboopdev2022-code",
-  "framework": "NickelHook"
-}
-EOF
-        
-        # Create the tar package
-        tar -czf KoboRoot.tgz KoboRoot
-        
-    - name: Verify package creation
-      run: |
-        echo "Verifying package creation..."
-        ls -la KoboRoot.tgz
-        echo "Package created successfully!"
+        # Run the build inside NickelTC Docker container
+        docker run --rm \
+          -v $(pwd):/workspace \
+          -w /workspace \
+          ghcr.io/pgaskin/nickeltc:1.0 \
+          bash -c "make clean && make koboroot"
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
