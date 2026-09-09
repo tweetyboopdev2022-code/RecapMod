@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     
     steps:
     - name: Checkout Repository
@@ -17,20 +17,17 @@ jobs:
     - name: Setup Build Environment
       run: |
         sudo apt-get update
-        # Install complete ARM cross-compilation and Qt5 dependencies
-        sudo apt-get install -y gcc g++ make crossbuild-essential-armhf qt5-default libqt5core5a libqt5gui5 libqt5widgets5 libqt5dbus5 libqt5network5
+        # Install complete ARM cross-compilation and Qt5 dependencies for Ubuntu 24.04
+        sudo apt-get install -y gcc g++ make crossbuild-essential-armhf \
+          libqt5core5a libqt5gui5 libqt5widgets5 libqt5dbus5 libqt5network5 \
+          qtbase5-dev libqt5serialport5 libqt5xml5 libqt5sql5
         
     - name: Build RecapMod Plugin
       run: |
         echo "Building RecapMod plugin..."
-        # Clean previous builds
         make clean
-        
-        # Set proper ARM cross-compilation environment
         export CC=arm-linux-gnueabihf-gcc
         export CXX=arm-linux-gnueabihf-g++
-        
-        # Build the plugin
         make
         
     - name: Verify Plugin Binary
@@ -47,7 +44,6 @@ jobs:
         
     - name: Create KoboRoot Structure
       run: |
-        echo "Creating KoboRoot structure..."
         mkdir -p KoboRoot/usr/lib
         cp librecapmod.so KoboRoot/usr/lib/
         tar -czf KoboRoot.tgz KoboRoot
