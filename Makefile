@@ -1,22 +1,29 @@
-CXX := arm-linux-gnueabihf-g++
-PKG_CONFIG := arm-linux-gnueabihf-pkg-config
+CXX = arm-linux-gnueabihf-g++
+MOC = moc
 
-# Retrieve Qt5 include directories via pkg-config
-QT_CFLAGS := $(shell $(PKG_CONFIG) --cflags Qt5Widgets 2>/dev/null || \
-    echo "-I/usr/include/arm-linux-gnueabihf/qt5 -I/usr/include/arm-linux-gnueabihf/qt5/QtWidgets")
+INCLUDES = -I. -INickelHook \
+           -I/usr/include/arm-linux-gnueabihf/qt5 \
+           -I/usr/include/arm-linux-gnueabihf/qt5/QtWidgets \
+           -I/usr/include/arm-linux-gnueabihf/qt5/QtGui \
+           -I/usr/include/arm-linux-gnueabihf/qt5/QtCore
 
-CXXFLAGS := -I. -INickelHook $(QT_CFLAGS) -fPIC -Wall -Wextra -std=c++11
+CXXFLAGS = -fPIC -Wall -Wextra -std=c++11 -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_CORE_LIB
 
-librecapmod.so: src/recapmod.cc
-	$(CXX) $(CXXFLAGS) -shared -o $@ $<
+all: librecapmod.so
 
-build: librecapmod.so
+# Generates recapmod.moc before main compilation
+recapmod.moc: src/recapmod.cc
+	$(MOC) $(INCLUDES) src/recapmod.cc -o recapmod.moc
+
+# Builds the shared library (depends on recapmod.moc)
+librecapmod.so: recapmod.moc src/recapmod.cc
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -shared -o librecapmod.so src/recapmod.cc
+
+koboroot: librecapmod.so
+	mkdir -p KoboRoot/usr/local/recapmod
+	cp librecapmod.so KoboRoot/usr/local/recapmod/
+	tar -czf KoboRoot.tgz -C KoboRoot usr
+	rm -rf KoboRoot
 
 clean:
-	rm -rf KoboRoot* librecapmod.so
-
-koboroot: build
-	rm -rf KoboRoot
-	mkdir -p KoboRoot/usr/lib
-	cp librecapmod.so KoboRoot/usr/lib/
-	tar -czf KoboRoot.tgz KoboRoot
+	rm -rf KoboRoot* librecapmod.so recapmod.moc

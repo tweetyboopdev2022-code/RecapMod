@@ -10,5 +10,7 @@ RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
     apt-get install -y --no-install-recommends \
         g++-arm-linux-gnueabihf \
         qtbase5-dev:armhf \
+        qtbase5-dev-tools \
+        qtchooser \
         libqt5widgets5:armhf && \
     rm -rf /var/lib/apt/lists/*
