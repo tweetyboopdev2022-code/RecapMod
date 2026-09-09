@@ -1,37 +1,22 @@
-# RecapMod Makefile
-NAME := recapmod
-LIBRARY := librecapmod.so
-SOURCES := src/recapmod.cc
-INCLUDES := -I. -INickelHook
+CXX := arm-linux-gnueabihf-g++
+PKG_CONFIG := arm-linux-gnueabihf-pkg-config
 
-# Use Docker for cross-compilation with NickelTC
-DOCKER_IMAGE := ghcr.io/pgaskin/nickeltc:1.0
+# Retrieve Qt5 include directories via pkg-config
+QT_CFLAGS := $(shell $(PKG_CONFIG) --cflags Qt5Widgets 2>/dev/null || \
+    echo "-I/usr/include/arm-linux-gnueabihf/qt5 -I/usr/include/arm-linux-gnueabihf/qt5/QtWidgets")
 
-# Default target
-all: koboroot
+CXXFLAGS := -I. -INickelHook $(QT_CFLAGS) -fPIC -Wall -Wextra -std=c++11
 
-# Build using the NickelTC Docker environment (proper approach)
-build-in-docker:
-	docker run --rm \
-		-v $(PWD):/workspace \
-		-w /workspace \
-		$(DOCKER_IMAGE) \
-		bash -c "make clean && make build"
+librecapmod.so: src/recapmod.cc
+	$(CXX) $(CXXFLAGS) -shared -o $@ $<
 
-# Build the plugin library
-build:
-	c++ -I. -INickelHook -fPIC -Wall -Wextra -std=c++11 -shared -o $(LIBRARY) $(SOURCES)
+build: librecapmod.so
 
-# Create KoboRoot.tgz package
-koboroot: build
-	@echo "Creating KoboRoot.tgz..."
-	@mkdir -p KoboRoot/usr/lib
-	@cp $(LIBRARY) KoboRoot/usr/lib/
-	@tar -czf KoboRoot.tgz KoboRoot
-	@echo "KoboRoot.tgz created successfully!"
-
-# Clean build artifacts
 clean:
-	rm -rf KoboRoot* $(LIBRARY)
+	rm -rf KoboRoot* librecapmod.so
 
-.PHONY: all build build-in-docker koboroot clean
+koboroot: build
+	rm -rf KoboRoot
+	mkdir -p KoboRoot/usr/lib
+	cp librecapmod.so KoboRoot/usr/lib/
+	tar -czf KoboRoot.tgz KoboRoot

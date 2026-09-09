@@ -13,14 +13,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Build KoboRoot.tgz using NickelTC
+    - name: Build NickelHook Plugin with Qt5 Headers
       run: |
-        # Run the build inside NickelTC Docker container
         docker run --rm \
+          --user root \
           -v $(pwd):/workspace \
           -w /workspace \
           ghcr.io/pgaskin/nickeltc:1.0 \
-          bash -c "make clean && make koboroot"
+          bash -c "dpkg --add-architecture armhf && \
+                   apt-get update && \
+                   apt-get install -y --no-install-recommends qtbase5-dev:armhf libqt5widgets5:armhf && \
+                   make clean && make koboroot"
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
