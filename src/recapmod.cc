@@ -1,10 +1,10 @@
 #include <stdio.h>
 
-// Simple plugin that just logs when loaded
+// Simple plugin that just works with basic C/C++
 extern "C" void nh_init() {
-    printf("RecapMod plugin initialized successfully\n");
+    printf("RecapMod plugin loaded successfully\n");
 }
 
 extern "C" void nh_fini() {
-    printf("RecapMod plugin cleaned up\n");
+    printf("RecapMod plugin unloaded\n");
 }

@@ -1,5 +1,6 @@
+# Simple build system for Kobo plugin
 CXX := arm-linux-gnueabihf-g++
-CXXFLAGS := -I. -INickelHook -fPIC -Wall -Wextra -std=c++11
+CXXFLAGS := -I. -fPIC -Wall -Wextra -std=c++11
 
 librecapmod.so: src/recapmod.cc
 	$(CXX) $(CXXFLAGS) -shared -o $@ $<
