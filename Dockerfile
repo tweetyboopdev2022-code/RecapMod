@@ -2,6 +2,7 @@ FROM ghcr.io/pgaskin/nickeltc:1.0
 
 USER root
 
+# Switch to Debian Buster archives and set up armhf cross-compilation environment
 RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
     sed -i 's/security.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
     sed -i '/buster-updates/d' /etc/apt/sources.list && \
@@ -9,6 +10,6 @@ RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
     apt-get -o Acquire::Check-Valid-Until=false update && \
     apt-get install -y --no-install-recommends \
         g++-arm-linux-gnueabihf \
-        qtbase5-dev-tools:amd64 \
-        qtbase5-dev:armhf
+        qtbase5-dev:armhf \
+        libqt5widgets5:armhf && \
     rm -rf /var/lib/apt/lists/*
