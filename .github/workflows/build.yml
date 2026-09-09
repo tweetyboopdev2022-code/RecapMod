@@ -1,30 +1,42 @@
-name: Build NickelHook Plugin
+name: Build RecapMod
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Build Docker Image
-        run: docker build -t nickeltc-qt5 .
-
-      - name: Build NickelHook Plugin inside Container
-        run: |
-          docker run --rm \
-            --user root \
-            -v $(pwd):/workspace \
-            -w /workspace \
-            nickeltc-qt5 \
-            bash -c "make clean && make koboroot"
-
-      - name: Upload KoboRoot Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: KoboRoot
-          path: KoboRoot.tgz
+    - uses: actions/checkout@v4
+    
+    - name: Install Qt5 packages and build
+      run: |
+        docker run --rm \
+          --user root \
+          -v $(pwd):/workspace \
+          -w /workspace \
+          ghcr.io/pgaskin/nickeltc:1.0 \
+          bash -c "dpkg --add-architecture armhf && \
+                   apt-get update && \
+                   apt-get install -y --no-install-recommends \
+                     qtbase5-dev:armhf \
+                     libqt5widgets5:armhf \
+                     libqt5core5a:armhf \
+                     libqt5gui5:armhf \
+                     qtdeclarative5-dev:armhf \
+                     libqt5quick5:armhf \
+                     qtbase5-dev \
+                     libqt5widgets5 \
+                     libqt5core5a \
+                     libqt5gui5 && \
+                   make clean && make koboroot"
+        
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: RecapMod-KoboRoot
+        path: KoboRoot.tgz
