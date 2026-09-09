@@ -1,20 +1,17 @@
-name: Build RecapMod
+name: Build NickelHook Plugin
 
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+on: [push, pull_request]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Build custom build container
+      - name: Build Docker Image
         run: docker build -t nickeltc-qt5 .
 
       - name: Build NickelHook Plugin inside Container
@@ -29,8 +26,5 @@ jobs:
       - name: Upload KoboRoot Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: KoboRoot-RecapMod
-          path: |
-            KoboRoot.tgz
-            librecapmod.so
-          if-no-files-found: error
+          name: KoboRoot
+          path: KoboRoot.tgz

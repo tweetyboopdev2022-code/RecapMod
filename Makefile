@@ -11,11 +11,9 @@ CXXFLAGS = -fPIC -Wall -Wextra -std=c++11 -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_COR
 
 all: librecapmod.so
 
-# Generates recapmod.moc before main compilation
 recapmod.moc: src/recapmod.cc
 	$(MOC) $(INCLUDES) src/recapmod.cc -o recapmod.moc
 
-# Builds the shared library (depends on recapmod.moc)
 librecapmod.so: recapmod.moc src/recapmod.cc
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -shared -o librecapmod.so src/recapmod.cc
 

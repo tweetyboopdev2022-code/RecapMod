@@ -2,7 +2,6 @@ FROM ghcr.io/pgaskin/nickeltc:1.0
 
 USER root
 
-# Switch to Debian Buster archives and set up armhf cross-compilation environment
 RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
     sed -i 's/security.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
     sed -i '/buster-updates/d' /etc/apt/sources.list && \
