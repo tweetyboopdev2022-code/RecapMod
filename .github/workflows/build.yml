@@ -20,6 +20,7 @@ jobs:
       - name: Build NickelHook Plugin inside Container
         run: |
           docker run --rm \
+            --user root \
             -v $(pwd):/workspace \
             -w /workspace \
             nickeltc-qt5 \
