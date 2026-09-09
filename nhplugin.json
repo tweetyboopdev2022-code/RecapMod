@@ -1,1 +1,6 @@
-{}
+{
+    "name": "RecapMod",
+    "version": "1.0.0",
+    "description": "Adds Recap tab to Kobo table of contents",
+    "author": "tweetyboopdev2022-code"
+}

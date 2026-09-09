@@ -1,27 +1,16 @@
-CXX = arm-linux-gnueabihf-g++
-MOC = moc
+CXX := arm-linux-gnueabihf-g++
+CXXFLAGS := -I. -INickelHook -fPIC -Wall -Wextra -std=c++11
 
-INCLUDES = -I. -INickelHook \
-           -I/usr/include/arm-linux-gnueabihf/qt5 \
-           -I/usr/include/arm-linux-gnueabihf/qt5/QtWidgets \
-           -I/usr/include/arm-linux-gnueabihf/qt5/QtGui \
-           -I/usr/include/arm-linux-gnueabihf/qt5/QtCore
+librecapmod.so: src/recapmod.cc
+	$(CXX) $(CXXFLAGS) -shared -o $@ $<
 
-CXXFLAGS = -fPIC -Wall -Wextra -std=c++11 -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_CORE_LIB
-
-all: librecapmod.so
-
-recapmod.moc: src/recapmod.cc
-	$(MOC) $(INCLUDES) src/recapmod.cc -o recapmod.moc
-
-librecapmod.so: recapmod.moc src/recapmod.cc
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -shared -o librecapmod.so src/recapmod.cc
-
-koboroot: librecapmod.so
-	mkdir -p KoboRoot/usr/local/recapmod
-	cp librecapmod.so KoboRoot/usr/local/recapmod/
-	tar -czf KoboRoot.tgz -C KoboRoot usr
-	rm -rf KoboRoot
+build: librecapmod.so
 
 clean:
-	rm -rf KoboRoot* librecapmod.so recapmod.moc
+	rm -rf KoboRoot* librecapmod.so
+
+koboroot: build
+	rm -rf KoboRoot
+	mkdir -p KoboRoot/usr/lib
+	cp librecapmod.so KoboRoot/usr/lib/
+	tar -czf KoboRoot.tgz KoboRoot
