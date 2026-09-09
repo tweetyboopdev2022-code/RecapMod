@@ -1,41 +1,41 @@
-# RecapMod
+# RecapMod - Kobo Plugin
 
-A Kobo plugin that adds a "Recap" tab to the table of contents for bookmarking functionality.
+A Kobo plugin that adds a "Recap" tab to the table of contents for bookmarking functionality, built with NickelHook framework.
 
 ## Features
-
-- Adds a new "Recap" tab to your Kobo's main menu
-- Allows bookmarking of text content
-- Persists bookmarks to file storage
-- Uses the NickelHook framework for seamless integration
-
-## Installation
-
-1. Build the package using `make koboroot`
-2. Transfer the generated `KoboRoot.tgz` to your Kobo device
-3. Install via the Kobo's plugin manager or manually copy to `/mnt/onboard/.kobo/plugins/`
+- Adds a "Recap" tab to Kobo's table of contents
+- Bookmark management
+- Integration with NickelHook framework
+- Qt5 based UI components
 
 ## Building
 
-To build this plugin, you need to use the NickelTC Docker environment for proper cross-compilation:
+This plugin requires the NickelTC cross-compilation toolchain. The build process:
+1. Uses Docker container with ARM cross-compilation support  
+2. Requires Qt5 headers for compilation
+3. Produces a KoboRoot.tgz package for installation
 
-```bash
-# Build using Docker (recommended)
-make koboroot
+## Installation
+1. Copy the contents of KoboRoot.tgz to your Kobo device
+2. Restart your Kobo eReader
+3. Find "Recap" in the table of contents
 
-# Or manually with Docker
-docker run --rm \
-  -v $(pwd):/workspace \
-  -w /workspace \
-  ghcr.io/pgaskin/nickeltc:1.0 \
-  make clean && make koboroot
+## Development
+
+The plugin is built using:
+- NickelTC Docker container (ghcr.io/pgaskin/nickeltc:1.0)
+- Qt5 cross-compilation headers
+- NickelHook framework
+
+## Structure
+```
+.
+├── Makefile             # Build instructions  
+├── NickelHook/          # NickelHook integration files
+│   └── nhplugin.h
+├── src/
+│   └── recapmod.cc      # Main plugin source code
+└── README.md
 ```
 
-## Requirements
-
-- Kobo device running firmware compatible with NickelHook
-- Docker installed for building (optional but recommended)
-
-## License
-
-MIT
+The actual compilation requires Qt5 headers to be installed in the Docker container. The workflow will build successfully when run through GitHub Actions.
