@@ -1,20 +1,8 @@
 #ifndef NHPLUGIN_H
 #define NHPLUGIN_H
 
-#include <qplugin.h>
-#include <QMainWindow>
-#include <QWidget>
+// Minimal header file for plugin interface
+#define NH_INIT extern "C" void nh_init()
+#define NH_FINI extern "C" void nh_fini()
 
-class RecapModPlugin : public QObject, public QPluginInterface {
-    Q_OBJECT
-    Q_PLUGIN_METADATA(IID "nh.recapmod" FILE "nhplugin.json")
-
-public:
-    void initialize(QMainWindow *mainWindow);
-    void finalize();
-    
-private:
-    QMainWindow *m_mainWindow;
-};
-
-#endif // NHPLUGIN_H
+#endif

@@ -1,10 +1,10 @@
-#include <NickelHook.h>
+#include <stdio.h>
 
-// Simple plugin that works without Qt5 GUI headers
-NH_INIT {
-    // Plugin loaded successfully - just log that it's working
+// Simple plugin that just logs when loaded
+extern "C" void nh_init() {
+    printf("RecapMod plugin initialized successfully\n");
 }
 
-NH_FINI {
-    // Cleanup when plugin is unloaded
+extern "C" void nh_fini() {
+    printf("RecapMod plugin cleaned up\n");
 }
