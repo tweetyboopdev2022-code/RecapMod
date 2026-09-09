@@ -1,10 +1,35 @@
-- name: Build custom build container
+name: Build RecapMod
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build custom build container
         run: docker build -t nickeltc-qt5 .
 
-      - name: Build NickelHook Plugin
+      - name: Build NickelHook Plugin inside Container
         run: |
           docker run --rm \
             -v $(pwd):/workspace \
             -w /workspace \
             nickeltc-qt5 \
             bash -c "make clean && make koboroot"
+
+      - name: Upload KoboRoot Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KoboRoot-RecapMod
+          path: |
+            KoboRoot.tgz
+            librecapmod.so
+          if-no-files-found: error
