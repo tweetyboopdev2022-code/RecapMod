@@ -1,17 +1,22 @@
-# Simple build system for Kobo plugin
-CXX := arm-linux-gnueabihf-g++
-CXXFLAGS := -I. -fPIC -Wall -Wextra -std=c++11
+# RecapMod Makefile
+# Uses NickelHook framework for Kobo mod development
 
-librecapmod.so: src/recapmod.cc
-	$(CXX) $(CXXFLAGS) -shared -o $@ $<
+include ./NickelHook/NickelHook.mk
 
-build: librecapmod.so
+# Mod configuration
+override NAME           := RecapMod
+override LIBRARY        := librecapmod.so
+override SOURCES        += src/recapmod.cc
+override CFLAGS         += -Wall -Wextra -Werror
+override PKGCONF        += Qt5Widgets
+override MOCS           += src/recapmod.h
+override CXXFLAGS       += -Wall -Wextra -Werror -Wno-missing-field-initializers
 
-clean:
-	rm -rf KoboRoot* librecapmod.so
+# Include NickelHook.mk again to complete the build configuration
+include ./NickelHook/NickelHook.mk
 
-koboroot: build
-	rm -rf KoboRoot
-	mkdir -p KoboRoot/usr/lib
-	cp librecapmod.so KoboRoot/usr/lib/
-	tar -czf KoboRoot.tgz KoboRoot
+# Additional build targets
+.PHONY: clean distclean
+
+distclean: clean
+	rm -f KoboRoot.tgz
