@@ -54,6 +54,14 @@ FRAG=$(printf '%s' "$MARK" | sed 's/.*!//; s/#.*//')
 SPAN=$(printf '%s' "$MARK" | sed -n 's/.*#kobo\.\([0-9][0-9]*\)\..*/\1/p')
 
 PATHNAME=$(printf '%s' "$BOOK" | sed 's|^file://||')
+# Books synced from a server (Grimmory, Calibre-Web, Komga...) are stored the
+# way store purchases are: in .kobo/kepub/, named after their ContentID, which
+# is not a file:// path. Look there, but only when the file really exists, so
+# sideloaded books and setups without a server behave exactly as before.
+case "$BOOK" in
+    file://*) ;;
+    *) [ -f "/mnt/onboard/.kobo/kepub/$BOOK" ] && PATHNAME="/mnt/onboard/.kobo/kepub/$BOOK" ;;
+esac
 SRC=""
 for cand in "$PATHNAME" \
             "$(printf '%s' "$PATHNAME" | sed 's/\.kepub\.epub$/_with_ai_recaps.kepub.epub/')" \

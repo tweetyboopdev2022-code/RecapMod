@@ -1,33 +1,32 @@
-# RecapMod Usage Guide
+# Using Recap
 
-## What This Plugin Does
+1. Open a book that has recap data embedded (see README).
+2. Tap the page to show the reading bar, then tap the **Recap** button.
+3. Read the recap. Page through with the dialog's arrows; the cast list is on
+   the following pages. Close the dialog to return to your book.
 
-The RecapMod plugin adds a new "Recap" tab to your Kobo's main menu that allows you to:
-- Create bookmarks of important text passages
-- View all your saved bookmarks in one place
-- Manage your reading progress and key highlights
+## What you'll see
 
-## How to Use
+- **"Last read N day(s) ago"** — from the book's last-read date.
+- **"You stopped after …"** — the last chapter you finished, summarised.
+  If you are partway through a chapter, a line says so; that chapter is never
+  summarised, because its summary would give away the rest of it.
+- **"Before that, …"** — the chapter before, for context.
+- **"Who you have met"** — up to 30 people, ranked by how often they have
+  appeared so far.
 
-1. After installation, restart your Kobo device
-2. Open the main menu (top left corner)
-3. Look for the "Recap" tab
-4. Create bookmarks by typing text and clicking "Add Bookmark"
-5. View all your saved bookmarks in the list
+## Messages
 
-## Important Notes
+- **"This book has no recap data embedded yet."** — the book carries no
+  `EPUB/recaps/recaps.tsv`. Recaps are generated on a computer and embedded
+  before the book goes onto the Kobo.
+- **"You are at the very beginning, so there is nothing to recap."** — you
+  haven't finished a chapter yet.
+- **"No sqlite3 available."** — install NickelHardcover, or put a `sqlite3`
+  binary in `.adds/Recap/`.
 
-- Bookmarks are saved to `/mnt/onboard/.kobo/recap_bookmarks.txt`
-- The plugin requires the NickelHook framework to be installed on your device
-- This is a development version - for production use, ensure you're using compatible firmware
+## Books from Grimmory and other servers
 
-## Troubleshooting
-
-If the plugin doesn't appear:
-1. Ensure NickelHook is properly installed on your device
-2. Restart your Kobo reader completely
-3. Check that the plugin file was copied correctly to the plugins directory
-
-## Support
-
-For support or issues, please check the GitHub repository for this project.
+Books synced from a server work the same as sideloaded ones. They live in
+`.kobo/kepub/` under an ID instead of a filename, and Recap finds them there
+automatically.
