@@ -36,11 +36,15 @@ Books without recap data, including Kobo store purchases, show a short
 1. Build `KoboRoot.tgz` (see below), copy it into the hidden `.kobo` folder on
    the Kobo, eject, and let the Kobo install it and restart.
 2. Copy `device/recap.sh` to `.adds/Recap/recap.sh` on the Kobo.
-3. The script needs `sqlite3`. It uses the copy shipped with NickelHardcover
-   (`.adds/NickelHardcover/sqlite3`) if present, otherwise
-   `.adds/Recap/sqlite3`, otherwise one on the system path.
+3. The script needs a SQLite reader. It tries `.adds/Recap/recap-sql` first,
+   then NickelHardcover's `sqlite3`, then `.adds/Recap/sqlite3`, then one on
+   the system path. Read errors go to `.adds/Recap/sql-errors.log`.
 
-Tested on firmware 4.46.23836.
+Tested on firmware 4.46.23836 and 6.0.276679.
+
+**Firmware 6.0** ignores `KoboRoot.tgz`. It installs `.kobo/Kobo.tgz` instead,
+runs Qt 6.5.2, and the static `sqlite3` crashes on it (SIGFPE). So on 6.0 use
+the Qt 6 build's `Kobo.tgz` and put `recap-sql` (see below) in `.adds/Recap/`.
 
 **Uninstalling:** create an empty file named `RecapMod_uninstall` in the root
 of the Kobo drive and restart.
@@ -72,3 +76,27 @@ toolchain, builds there, and brings the results back:
 ```
 
 Set `RECAP_BUILD_HOST` to choose the build machine.
+
+### Qt 6 (firmware 6.0)
+
+`NickelHook/` is nicoverbruggen/NickelHook's `qt6-support` branch (0611c65),
+which still builds the Qt 5 plugin by default. The toolchain is the Dockerfile
+in nicoverbruggen/NickelMenu's `qt6-support` branch (`toolchain/qt6`). With it
+on `PATH`:
+
+```
+make clean
+make NH_QT_MAJOR=6 all kobo   # Kobo.tgz
+```
+
+Content::getId changed on 6.0 (it now takes an unused `QString`); the mod
+looks up both forms.
+
+`recap-sql` is `device/recap-sql.c` compiled with SQLite's amalgamation by
+the same toolchain, linked dynamically against the Kobo's own C library:
+
+```
+arm-kobo-linux-gnueabihf-gcc -O2 -march=armv7-a -mtune=cortex-a8 -mfpu=neon \
+  -mfloat-abi=hard -mthumb -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION \
+  -o recap-sql device/recap-sql.c sqlite3.c -lm
+```
