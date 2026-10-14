@@ -1,32 +1,73 @@
 #!/bin/sh
 # Recap - what you read last time, for Nickel's reader menu.
 #
-# Reads the recap data embedded in the kepub itself (EPUB/recaps/*.tsv) and
-# your position from KoboReader.sqlite, and shows only what is at or before
-# where you are.
+# Reads the recap data embedded in the kepub itself (<opf dir>/recaps/*.tsv)
+# and your position from KoboReader.sqlite, and shows only what is behind the
+# page you are on.
 #
-# Rows are keyed by SPINE FILENAME, not by a number. Nickel's VolumeIndex
-# counts every spine document including the title page, while the generator
-# only ever saw the chapter files, so the two numberings differ by however
-# much front matter a book has. Matching the filename removes that offset.
+# Position is the spine document AND the koboSpan paragraph of the bookmark
+# (ChapterIDBookmarked = OEBPS/ch.xhtml#kobo.N.M). epubkit files every passage
+# recap against the paragraph it ends on, and every person against the
+# paragraph that first names them, so the comparison is paragraph against
+# paragraph - never "the whole chapter" against a guess.
+#
+# Rows are keyed by spine filename, not by a number, and placed with
+# recaps/spine.tsv, so front matter and short interludes do not shift anything.
+#
+# Older books (recaps.tsv + cast.tsv only, from before passages) still work:
+# each chapter is treated as one passage ending on its last paragraph, which
+# is exactly the old "only finished chapters" rule.
+#
+# $1  ContentID of the open book (from the mod). Optional.
+# $2  Live position "path#kobo.N.M" (from the mod). Optional; overrides the
+#     database, which Nickel only writes when a book is closed or the device
+#     sleeps.
 #
 # Output is HTML for a QLabel. A line containing only <!--PAGE--> starts a new
-# page in the dialog.
+# page in the dialog. Always exits 0: NickelMenu replaces the output of a
+# failing script with an error message.
 
 DB=${RECAP_DB:-/mnt/onboard/.kobo/KoboReader.sqlite}
-MAXCAST=30
 HALFLINES=30
 LINECOLS=58
 MAXSUMMARY=600
+BIG=100000
 
 SQL=""
-for c in /mnt/onboard/.adds/NickelHardcover/sqlite3 /mnt/onboard/.adds/Recap/sqlite3; do
+# recap-sql is built against the Kobo's own C library. The static sqlite3
+# binaries crash (SIGFPE, exit 136) on firmware 6.0, so they are fallbacks.
+for c in /mnt/onboard/.adds/Recap/recap-sql /mnt/onboard/.adds/NickelHardcover/sqlite3 /mnt/onboard/.adds/Recap/sqlite3; do
     [ -x "$c" ] && SQL="$c" && break
 done
 [ -z "$SQL" ] && SQL=$(command -v sqlite3 2>/dev/null)
 [ -z "$SQL" ] && { echo "No sqlite3 available. Nothing was read or changed."; exit 0; }
 
-q() { "$SQL" "$DB" "$1" 2>/dev/null; }
+# Firmware 6 keeps the database in WAL mode while Nickel holds it open. If a
+# read fails (locked, or the -shm file cannot be shared), read a private copy
+# of the database and its WAL instead. Errors go to sql-errors.log so a blank
+# answer is never silent again.
+SQLERR=/mnt/onboard/.adds/Recap/sql-errors.log
+[ -d "${SQLERR%/*}" ] || SQLERR=/dev/null
+[ -f "$SQLERR" ] && [ "$(wc -c < "$SQLERR" 2>/dev/null)" -gt 65536 ] 2>/dev/null && : > "$SQLERR"
+SNAP=""
+snapshot() {
+    SNAP=/tmp/recap-db/KoboReader.sqlite
+    mkdir -p /tmp/recap-db 2>/dev/null
+    rm -f "$SNAP" "$SNAP-wal" "$SNAP-shm"
+    cp "$DB" "$SNAP" 2>>"$SQLERR" || { SNAP=""; return 1; }
+    [ -f "$DB-wal" ] && cp "$DB-wal" "$SNAP-wal" 2>>"$SQLERR"
+    return 0
+}
+q() {
+    out=$("$SQL" "$DB" "$1" 2>>"$SQLERR")
+    rc=$?
+    if [ $rc -ne 0 ]; then
+        echo "$(date '+%F %T') exit $rc on live db: $1" >> "$SQLERR"
+        { [ -n "$SNAP" ] || snapshot; } && out=$("$SQL" "$SNAP" "$1" 2>>"$SQLERR")
+    fi
+    [ -n "$out" ] && printf '%s\n' "$out"
+    return 0
+}
 esc() { printf '%s' "$1" | sed "s/'/''/g"; }
 html() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
 
@@ -49,9 +90,11 @@ BQ=$(esc "$BOOK")
 
 TITLE=$(q "SELECT Title FROM content WHERE ContentID='$BQ';")
 GAP=$(q "SELECT CAST(julianday('now') - julianday(DateLastRead) AS INT) FROM content WHERE ContentID='$BQ';")
-MARK=$(q "SELECT ChapterIDBookmarked FROM content WHERE ContentID='$BQ';")
+MARK="${2:-}"
+[ -z "$MARK" ] && MARK=$(q "SELECT ChapterIDBookmarked FROM content WHERE ContentID='$BQ';")
 FRAG=$(printf '%s' "$MARK" | sed 's/.*!//; s/#.*//')
-SPAN=$(printf '%s' "$MARK" | sed -n 's/.*#kobo\.\([0-9][0-9]*\)\..*/\1/p')
+PARA=$(printf '%s' "$MARK" | sed -n 's/.*#kobo\.\([0-9][0-9]*\)\..*/\1/p')
+SEG=$(printf '%s' "$MARK" | sed -n 's/.*#kobo\.[0-9][0-9]*\.\([0-9][0-9]*\).*/\1/p')
 
 PATHNAME=$(printf '%s' "$BOOK" | sed 's|^file://||')
 # Books synced from a server (Grimmory, Calibre-Web, Komga...) are stored the
@@ -62,49 +105,57 @@ case "$BOOK" in
     file://*) ;;
     *) [ -f "/mnt/onboard/.kobo/kepub/$BOOK" ] && PATHNAME="/mnt/onboard/.kobo/kepub/$BOOK" ;;
 esac
+
+# The recap folder sits beside the OPF, which is EPUB/ in some books and
+# OEBPS/ or the zip root in others - so find it rather than assume it.
 SRC=""
-for cand in "$PATHNAME" \
+DIR=""
+for cand in "$RECAP_SRC" "$PATHNAME" \
             "$(printf '%s' "$PATHNAME" | sed 's/\.kepub\.epub$/_with_ai_recaps.kepub.epub/')" \
             "$(printf '%s' "$PATHNAME" | sed 's/\.kepub\.epub$/_with_recaps.kepub.epub/')"; do
-    [ -f "$cand" ] || continue
-    if unzip -l "$cand" 2>/dev/null | grep -q "EPUB/recaps/recaps.tsv"; then
+    [ -n "$cand" ] && [ -f "$cand" ] || continue
+    # a book can carry an older recaps.tsv set beside a newer parts.tsv set;
+    # the newer one is the one that knows paragraphs, so it wins
+    list=$(unzip -l "$cand" 2>/dev/null | awk '{print $NF}')
+    hit=$(printf '%s\n' "$list" | grep -E 'recaps/parts\.tsv$' | head -n 1)
+    [ -z "$hit" ] && hit=$(printf '%s\n' "$list" | grep -E 'recaps/recaps\.tsv$' | head -n 1)
+    if [ -n "$hit" ]; then
         SRC="$cand"
+        DIR="${hit%/*}/"
         break
     fi
 done
-[ -n "$RECAP_SRC" ] && SRC="$RECAP_SRC"
 [ -z "$SRC" ] && { printf '<p><b>%s</b></p><p>This book has no recap data embedded yet.</p>\n' "$(printf '%s' "$TITLE" | html)"; exit 0; }
 
-RECAPS=$(unzip -p "$SRC" EPUB/recaps/recaps.tsv 2>/dev/null)
+get() { unzip -p "$SRC" "${DIR}$1" 2>/dev/null; }
 
-# Where you are. An exact filename match means you are inside that chapter, so
-# the recap has to stop before it. No match means front matter or a chapter too
-# short to summarise, and the last chapter before it is the right one.
-CUR=$(printf '%s\n' "$RECAPS" | awk -F'\t' -v f="$FRAG" '$2==f {print $1; exit}')
-INSIDE=""
-if [ -n "$CUR" ]; then
-    # How far into the current chapter you are. Kobo numbers every paragraph
-    # span, so the bookmark's span against the chapter's total is real
-    # progress. Below the threshold the chapter counts as unread, and that
-    # governs the cast as well as the recap: listing everyone who appears in a
-    # chapter you are halfway through is exactly the spoiler this avoids.
-    TOTAL=$(unzip -p "$SRC" "$FRAG" 2>/dev/null \
-            | grep -o 'id="kobo\.[0-9]*\.' | sort -u | wc -l | tr -d ' ')
-    PCT=0
-    if [ -n "$SPAN" ] && [ "${TOTAL:-0}" -gt 0 ] 2>/dev/null; then
-        PCT=$(( SPAN * 100 / TOTAL ))
-    fi
-    if [ "$PCT" -ge 90 ] 2>/dev/null; then
-        RECAPTO=$CUR
-    else
-        RECAPTO=$((CUR - 1))
-        INSIDE=yes
-    fi
-else
-    CUR=$(printf '%s\n' "$RECAPS" | awk -F'\t' -v f="$FRAG" '$2"" < f"" {p=$1} END{print (p=="" ? -1 : p)}')
-    RECAPTO=$CUR
+PARTS=$(get parts.tsv)
+if [ -z "$PARTS" ]; then
+    # older book: a chapter is one passage that ends with the chapter
+    PARTS=$(get recaps.tsv | awk -F'\t' -v big="$BIG" 'NF>=4 {printf "%s\t%s\t%d\t%s\t%s\n", $1, $2, big-1, $3, $4}')
 fi
-CASTTO=$RECAPTO
+# people: order, path, paragraph, name, met|heard, times seen, description
+PEOPLE=$(get people.tsv)
+if [ -z "$PEOPLE" ]; then
+    PEOPLE=$(get cast.tsv | awk -F'\t' -v big="$BIG" 'NF>=4 {n[$3]++; printf "%s\t%s\t%d\t%s\tmet\t%d\t%s\n", $1, $2, big-1, $3, n[$3], $4}')
+fi
+SPINE=$(get spine.tsv)
+
+# ---------------------------------------------------------------- position
+# ORDER is the spine position of the bookmarked document; POS is that and the
+# paragraph together, as one number to compare against every row.
+ORDER=$(printf '%s\n' "$SPINE" | awk -F'\t' -v f="$FRAG" '$2==f {print $1; exit}')
+[ -z "$ORDER" ] && ORDER=$(printf '%s\n' "$PARTS" | awk -F'\t' -v f="$FRAG" '$2==f {print $1; exit}')
+if [ -z "$ORDER" ]; then
+    # no spine list and no recap for this document: the last one sorting
+    # before it by name is the best guess, and it errs early, never late
+    # - so place the reader just past the end of that document
+    GUESS=$(printf '%s\n' "$PARTS" | awk -F'\t' -v f="$FRAG" '$2"" < f"" {p=$1} END{print (p=="" ? -1 : p)}')
+    ORDER=$((GUESS + 1))
+    PARA=-1
+fi
+[ -z "$PARA" ] && PARA=0
+POS=$((ORDER * BIG + PARA))
 
 if [ "$GAP" -gt 0 ] 2>/dev/null; then
     WHEN="Last read $GAP day(s) ago"
@@ -112,61 +163,123 @@ else
     WHEN="Last read today"
 fi
 
-pick() {
-    printf '%s\n' "$RECAPS" | awk -F'\t' -v n="$1" -v f="$2" '$1+0<=n {v=$f} END{print v}'
-}
+# passages fully behind you: order, label, summary - oldest first
+BEHIND=$(printf '%s\n' "$PARTS" | awk -F'\t' -v pos="$POS" -v big="$BIG" \
+         'NF>=5 && ($1 * big + $3) <= pos {printf "%s\t%s\t%s\n", $1, $4, $5}')
+LAST=$(printf '%s\n' "$BEHIND" | awk -F'\t' 'NF {o=$1} END{print o}')
+CURLABEL=$(printf '%s\n' "$PARTS" | awk -F'\t' -v o="$ORDER" '$1==o {print $4; exit}')
 
-LABEL=$(pick "$RECAPTO" 3)
-SUMMARY=$(pick "$RECAPTO" 4 | clip | html)
-PREVTO=$(printf '%s\n' "$RECAPS" | awk -F'\t' -v n="$RECAPTO" '$1+0<n {p=$1} END{print (p=="" ? -1 : p)}')
-PLABEL=$(pick "$PREVTO" 3)
-PSUMMARY=$(pick "$PREVTO" 4 | clip | html)
+# In the chapter you are in: the passage just behind your page on its own,
+# and the ones before it together
+NOW=""
+EARLIER=""
+if [ "$LAST" = "$ORDER" ]; then
+    NOW=$(printf '%s\n' "$BEHIND" | awk -F'\t' -v o="$ORDER" '$1==o {s=$3} END{print s}')
+    EARLIER=$(printf '%s\n' "$BEHIND" | awk -F'\t' -v o="$ORDER" '$1==o {if (p!="") printf "%s ", p; p=$3}')
+fi
+# and the chapter before that, whole
+PREV=$(printf '%s\n' "$BEHIND" | awk -F'\t' -v o="$ORDER" 'NF && $1 < o {p=$1} END{print p}')
+PLABEL=""
+PSUMMARY=""
+if [ -n "$PREV" ]; then
+    PLABEL=$(printf '%s\n' "$BEHIND" | awk -F'\t' -v o="$PREV" '$1==o {print $2; exit}')
+    PSUMMARY=$(printf '%s\n' "$BEHIND" | awk -F'\t' -v o="$PREV" '$1==o {print $3}' | tr '\n' ' ')
+fi
+NOW=$(printf '%s' "$NOW" | html)
+EARLIER=$(printf '%s' "$EARLIER" | clip | html)
+PSUMMARY=$(printf '%s' "$PSUMMARY" | clip | html)
 
-SANS='font-family:sans-serif'
-
-printf '<p style="%s; font-size:68%%; color:#666666; margin:0px 0px 12px 0px">%s</p>' \
-    "$SANS" "$(printf '%s' "$WHEN" | tr '[:lower:]' '[:upper:]')"
-if [ -n "$SUMMARY" ]; then
-    printf '<p style="%s; font-size:124%%; margin:0px"><b>You stopped after %s</b></p>' \
-        "$SANS" "$(printf '%s' "$LABEL" | html)"
-    if [ -n "$INSIDE" ]; then
-        printf '<p style="font-size:84%%; color:#666666; margin:5px 0px 0px 0px">You are partway through %s.</p>' \
-            "$(pick "$CUR" 3 | html)"
-    fi
-    printf '<hr>'
-    printf '<p style="margin:0px; line-height:152%%">%s</p>' "$SUMMARY"
-    if [ -n "$PSUMMARY" ]; then
-        # The summary page had no budget of its own, so a second chapter simply
-        # ran off the bottom. Give it its own page when it will not fit.
-        USED=$(( 6 + 2 * ((${#SUMMARY} + 57) / 58) ))
-        NEED=$(( 3 + 2 * ((${#PSUMMARY} + 64) / 65) ))
-        if [ $((USED + NEED)) -gt "$HALFLINES" ]; then
-            printf '\n<!--PAGE-->\n'
-            printf '<p style="%s; font-size:68%%; color:#666666; margin:0px 0px 12px 0px">BEFORE THAT</p>' "$SANS"
-            printf '<p style="%s; font-size:124%%; margin:0px"><b>%s</b></p>' \
-                "$SANS" "$(printf '%s' "$PLABEL" | html)"
-            printf '<hr>'
-            printf '<p style="margin:0px; line-height:152%%">%s</p>' "$PSUMMARY"
-        else
-            printf '<p style="%s; font-size:84%%; margin:36px 0px 10px 0px"><b>Before that, %s</b></p>' \
-                "$SANS" "$(printf '%s' "$PLABEL" | html)"
-            printf '<p style="font-size:89%%; color:#555555; margin:0px; line-height:152%%">%s</p>' "$PSUMMARY"
-        fi
-    fi
-else
-    printf '<p style="%s; font-size:124%%; margin:0px"><b>%s</b></p>' \
-        "$SANS" "$(printf '%s' "$TITLE" | html)"
-    printf '<p style="margin-top:12px">You are at the very beginning, so there is nothing to recap.</p>'
+# The line your page starts on, lifted out of the book itself: the koboSpan
+# the bookmark names and the rest of its paragraph. No model wrote this, so
+# it is exact, and it costs nothing to store. Entities are left as they are;
+# the dialog renders them.
+LINE=""
+if [ -n "$PARA" ] && [ -n "$SEG" ] && [ "$PARA" -ge 0 ] 2>/dev/null; then
+    LINE=$(unzip -p "$SRC" "$FRAG" 2>/dev/null | tr '\n' ' ' \
+           | grep -o "id=\"kobo\.$PARA\.[0-9]*\"[^>]*>[^<]*" \
+           | sed 's/^id="kobo\.[0-9]*\.\([0-9]*\)"[^>]*>/\1	/' \
+           | awk -F'\t' -v m="$SEG" -v max=240 '
+               $1+0 >= m { t = t $2 }
+               END {
+                   gsub(/  +/, " ", t); sub(/^ /, "", t)
+                   if (length(t) > max) { t = substr(t, 1, max); sub(/ [^ ]*$/, "", t); t = t "..." }
+                   print t
+               }')
 fi
 
-# One row per person, first-appearance order, most recent description at or
-# before your position, most recently met shown first.
-# Ranked by how many chapters the person appears in, not by who was met
-# most recently. Recency buried the leads: by chapter 13 of Harry Potter 5,
-# Harry ranked 81st of 83 and fell off a 30-name list entirely.
-CAST=$(unzip -p "$SRC" EPUB/recaps/cast.tsv 2>/dev/null \
-       | awk -F'\t' -v n="$CASTTO" '
-         function clean(t,   low, p) {
+SANS='font-family:sans-serif'
+USED=0
+line_cost() { echo $(( ($1 + LINECOLS - 1) / LINECOLS )); }
+# page break when the next block will not fit on this page
+room() {
+    if [ $((USED + $1)) -gt "$HALFLINES" ] && [ "$USED" -gt 0 ]; then
+        printf '\n<!--PAGE-->\n'
+        USED=0
+    fi
+    USED=$((USED + $1))
+}
+small() { room 2; printf '<p style="%s; font-size:68%%; color:#666666; margin:0px 0px 12px 0px">%s</p>' "$SANS" "$1"; }
+head1() { printf '<p style="%s; font-size:124%%; margin:0px"><b>%s</b></p>' "$SANS" "$1"; }
+body() { printf '<p style="margin:0px; line-height:152%%">%s</p>' "$1"; }
+sub1() { printf '<p style="%s; font-size:84%%; margin:24px 0px 8px 0px"><b>%s</b></p>' "$SANS" "$1"; }
+
+small "$(printf '%s' "$WHEN" | tr '[:lower:]' '[:upper:]')"
+if [ -n "$LINE" ]; then
+    room $(( 3 + 2 * $(line_cost ${#LINE}) ))
+    sub1 "Your page begins"
+    printf '<p style="margin:0px; line-height:152%%"><i>&#8220;%s&#8221;</i></p>' "$LINE"
+fi
+if [ -n "$NOW" ]; then
+    room $(( 4 + 2 * $(line_cost ${#NOW}) ))
+    head1 "Just before your page"
+    printf '<p style="font-size:84%%; color:#666666; margin:5px 0px 0px 0px">%s</p><hr>' \
+        "$(printf '%s' "$CURLABEL" | html)"
+    body "$NOW"
+    if [ -n "$EARLIER" ]; then
+        room $(( 3 + 2 * $(line_cost ${#EARLIER}) ))
+        sub1 "Earlier in $(printf '%s' "$CURLABEL" | html)"
+        body "$EARLIER"
+    fi
+    if [ -n "$PSUMMARY" ]; then
+        room $(( 3 + 2 * $(line_cost ${#PSUMMARY}) ))
+        sub1 "Before that, $(printf '%s' "$PLABEL" | html)"
+        printf '<p style="font-size:89%%; color:#555555; margin:0px; line-height:152%%">%s</p>' "$PSUMMARY"
+    fi
+elif [ -n "$PSUMMARY" ]; then
+    room $(( 4 + 2 * $(line_cost ${#PSUMMARY}) ))
+    head1 "You stopped after $(printf '%s' "$PLABEL" | html)"
+    if [ -n "$CURLABEL" ]; then
+        printf '<p style="font-size:84%%; color:#666666; margin:5px 0px 0px 0px">You have just started %s.</p>' \
+            "$(printf '%s' "$CURLABEL" | html)"
+    fi
+    printf '<hr>'
+    body "$PSUMMARY"
+else
+    room 4
+    head1 "$(printf '%s' "$TITLE" | html)"
+    printf '<p style="margin-top:12px">You are only a few pages in, so there is nothing to recap yet.</p>'
+fi
+
+# ---------------------------------------------------------------- who's who
+# Everyone whose first mention is at or before your page. Per person: the
+# latest status (met beats heard) and the latest description at or before
+# your page, ranked by how many passages they have turned up in so far -
+# recency buried the leads (Harry ranked 81st of 83 by chapter 13 of book 5).
+# Met and heard-of are listed separately; nobody is cut off the list.
+CAST=$(printf '%s\n' "$PEOPLE" \
+       | awk -F'\t' -v pos="$POS" -v big="$BIG" '
+         function clean(t,   low, p, n, i, part, out) {
+             # older epubkit runs padded descriptions with "not yet connected
+             # to <main character>", which says nothing - drop those pieces
+             n = split(t, part, ";")
+             out = ""
+             for (i = 1; i <= n; i++) {
+                 sub(/^ +/, "", part[i]); sub(/ +$/, "", part[i])
+                 if (part[i] == "" || tolower(part[i]) ~ /^not (yet )?connected to /) continue
+                 out = (out == "" ? part[i] : out "; " part[i])
+             }
+             t = out
+             if (t == "") return ""
              low = tolower(t)
              if (low !~ FATE) return t
              p = index(low, " who ")
@@ -178,47 +291,54 @@ CAST=$(unzip -p "$SRC" EPUB/recaps/cast.tsv 2>/dev/null \
              return t
          }
          BEGIN {
-             FATE = "kill|dies|died|dead|murder|betray|traitor|reveal|turns out|secretly|is actually|later becomes|will be|survives|sacrific|tortur|madness|insane|imprison|executed|doomed|his fate|her fate|their fate"
+             FATE = "kill|dies|died|murder|betray|traitor|reveal|turns out|secretly|is actually|later becomes|will be|survives|sacrific|tortur|imprison|executed|doomed|his fate|her fate|their fate"
          }
-         $1+0<=n {
-             if (!($3 in seen)) order[++c] = $3
-             seen[$3]++
-             t = clean($4)
-             sub(/^members of/, "a member of", t)
-             if (t != "" && $1+0 >= last[$3]) { last[$3] = $1+0; d[$3] = t }
+         NF >= 6 && ($1 * big + $3) <= pos {
+             nm = $4
+             if (!(nm in seen)) order[++c] = nm
+             # 7 columns carry a running count; the first passage layout had
+             # 6 and one row per appearance, so count the rows instead
+             if (NF >= 7) { seen[nm] = $6 + 0; desc = $7 } else { seen[nm]++; desc = $6 }
+             if ($5 == "met") met[nm] = 1
+             t = clean(desc)
+             if (t != "") d[nm] = t
+             if (t == "the main character") hero[nm] = 1
          }
          END {
              for (i = 1; i <= c; i++) {
                  nm = order[i]
-                 printf "%d\t%s\t%s\n", seen[nm] * 1000 + last[nm], nm,
+                 rank = (nm in hero) ? 99999999 : seen[nm] * 10000 + (c - i)
+                 printf "%s\t%d\t%s\t%s\n", (nm in met) ? "met" : "heard", rank, nm,
                         (nm in d ? d[nm] : "")
              }
-         }' | sort -rn | cut -f2-)
-COUNT=$(printf '%s\n' "$CAST" | grep -c .)
-[ "$COUNT" -eq 0 ] 2>/dev/null && exit 0
+         }' | sort -t "$(printf '\t')" -k2,2nr)
 
-printf '\n<!--PAGE-->\n'
-printf '<p style="%s; font-size:68%%; color:#666666; margin:0px 0px 16px 0px">WHO YOU HAVE MET (%s)</p>' \
-    "$SANS" "$COUNT"
-printf '%s\n' "$CAST" | head -n "$MAXCAST" | html \
-    | awk -F'\t' -v budget="$HALFLINES" -v w="$LINECOLS" \
-          -v total="$COUNT" -v shown="$MAXCAST" '
-        function rows(t,   k) { k = int((length(t) + w - 1) / w); return k < 1 ? 1 : k }
-        BEGIN { used = 5; pending = 0 }
-        {
-            cost = 2 * rows($1 "  " $2) + 1
-            if (used + cost > budget) {
-                print ""
-                print "<!--PAGE-->"
-                used = 0
-                pending = 0
-            }
-            if (pending) print "<hr>"
-            printf "<p style=\"margin:0px 0px 12px 0px; line-height:148%%\"><b style=\"font-family:sans-serif; font-size:92%%\">%s</b>&nbsp;&nbsp;%s</p>\n", $1, $2
-            pending = 1
-            used += cost
-        }
-        END {
-            if (total > shown)
-                printf "<p style=\"margin-top:18px\">Most recently met %d of %d.</p>", shown, total
-        }'
+render() {
+    # $1 = met|heard, $2 = heading; pages itself against the line budget
+    rows=$(printf '%s\n' "$CAST" | awk -F'\t' -v s="$1" '$1==s {printf "%s\t%s\n", $3, $4}')
+    n=$(printf '%s\n' "$rows" | grep -c .)
+    [ "$n" -eq 0 ] 2>/dev/null && return
+    printf '\n<!--PAGE-->\n'
+    small "$2 ($n)"
+    printf '%s\n' "$rows" | html \
+        | awk -F'\t' -v budget="$HALFLINES" -v w="$LINECOLS" '
+            function rows(t,   k) { k = int((length(t) + w - 1) / w); return k < 1 ? 1 : k }
+            BEGIN { used = 5; pending = 0 }
+            NF {
+                cost = 2 * rows($1 "  " $2) + 1
+                if (used + cost > budget) {
+                    print ""
+                    print "<!--PAGE-->"
+                    used = 0
+                    pending = 0
+                }
+                if (pending) print "<hr>"
+                printf "<p style=\"margin:0px 0px 12px 0px; line-height:148%%\"><b style=\"font-family:sans-serif; font-size:92%%\">%s</b>&nbsp;&nbsp;%s</p>\n", $1, $2
+                pending = 1
+                used += cost
+            }'
+}
+
+render met "WHO YOU HAVE MET"
+render heard "WHO YOU HAVE HEARD OF"
+exit 0

@@ -8,7 +8,7 @@ override NAME           := RecapMod
 override LIBRARY        := librecapmod.so
 override SOURCES        += src/recapmod.cc
 override CFLAGS         += -Wall -Wextra -Werror
-override PKGCONF        += Qt5Widgets
+override PKGCONF        += Qt$(NH_QT_MAJOR)Widgets
 override MOCS           += src/recapmod.h
 override CXXFLAGS       += -Wall -Wextra -Werror -Wno-missing-field-initializers
 
@@ -19,4 +19,4 @@ include ./NickelHook/NickelHook.mk
 .PHONY: clean distclean
 
 distclean: clean
-	rm -f KoboRoot.tgz
+	rm -f KoboRoot.tgz Kobo.tgz
