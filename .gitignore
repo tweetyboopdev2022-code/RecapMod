@@ -3,3 +3,7 @@
 *.so
 *.moc
 KoboRoot.tgz
+Kobo.tgz
+NickelHook/nhplugin.json
+.cache/
+*.d

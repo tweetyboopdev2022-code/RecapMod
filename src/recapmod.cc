@@ -9,6 +9,7 @@
 #include <QRect>
 #include <QScreen>
 #include <QFile>
+#include <QGuiApplication>
 #include <QFont>
 #include <QIODevice>
 #include <QHBoxLayout>
@@ -23,6 +24,7 @@
 #include <QPen>
 #include <QPixmap>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QString>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -62,7 +64,11 @@ static MainWindowController *(*MainWindowController_sharedInstance)();
 static QWidget *(*MainWindowController_pushView)(MainWindowController *mwc, QWidget *view);
 static void (*N3ButtonLabel_constructor)(QWidget *_this, QWidget *parent);
 static QString (*Content_getId)(void *volume);
+// Firmware 6 (Qt 6) gave Content::getId an argument it does not use: the id
+// comes from the content's own record either way.
+static QString (*Content_getId6)(void *volume, QString const &unused);
 static void (*ReadingView_setVolume)(void *_this, void *volume, void *bookmark);
+static void (*ReadingView_saveBookmark)(void *_this);
 static QString g_currentBook;
 static void (*TouchLabel_constructor)(QWidget *_this, QWidget *parent, int windowFlags);
 static void (*TouchLabel_setHitStateEnabled)(QWidget *_this, bool enabled);
@@ -141,16 +147,46 @@ static void logline(const QString &s) {
     f.close();
 }
 
+// Nickel writes the reading position to the database only when a book is
+// closed or the device sleeps, so the script would see where the book was
+// opened. Asking the open ReadingView to save first gives it the page on
+// screen. It is found when needed, never kept, so a closed book is not touched.
+static void saveCurrentPosition() {
+    foreach (QWidget *w, QApplication::allWidgets()) {
+        if (!w->inherits("ReadingView"))
+            continue;
+        if (ReadingView_saveBookmark)
+            ReadingView_saveBookmark(w);
+        else
+            QMetaObject::invokeMethod(w, "saveBookmark");
+        logline("saved the current position before reading it");
+        return;
+    }
+    logline("no ReadingView found; using the last saved position");
+}
+
 static QString recapText() {
+    saveCurrentPosition();
     QProcess p;
     QStringList args;
     args << QStringLiteral(RECAP_SCRIPT);
     if (!g_currentBook.isEmpty())
         args << g_currentBook;
+    // Traced to recap-trace.log while the firmware 6 port is being checked.
+    if (QFile::exists(QStringLiteral("/mnt/onboard/.adds/Recap/trace")))
+        args.prepend(QStringLiteral("-x"));
     p.start(QStringLiteral("/bin/sh"), args);
     if (!p.waitForFinished(8000))
         return QStringLiteral("The recap script timed out.");
     const QString out = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+    const QString err = QString::fromUtf8(p.readAllStandardError()).trimmed();
+    logline(QString("script exit %1, %2 bytes out").arg(p.exitCode()).arg(out.size()));
+    if (!err.isEmpty()) {
+        QFile t(QStringLiteral("/mnt/onboard/.adds/Recap/recap-trace.log"));
+        if (t.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+            t.write(err.toUtf8());
+    }
+    logline("script output starts: " + QString(out).remove(QRegularExpression(QStringLiteral("<[^>]*>"))).simplified().left(300));
     return out.isEmpty() ? QStringLiteral("The recap script produced no output.") : out;
 }
 
@@ -170,7 +206,13 @@ static void showRecapDialog() {
     // the cast became a table.
     QStringList pages;
     foreach (const QString &chunk,
-             recapText().split(QStringLiteral("<!--PAGE-->"), QString::SkipEmptyParts)) {
+             recapText().split(QStringLiteral("<!--PAGE-->"),
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+                               Qt::SkipEmptyParts
+#else
+                               QString::SkipEmptyParts
+#endif
+                               )) {
         const QString t = chunk.trimmed();
         if (!t.isEmpty())
             pages << t;
@@ -227,7 +269,7 @@ static void showRecapDialog() {
     if (N3Dialog_setTitle)
         N3Dialog_setTitle(dialog, QStringLiteral("Recap"));
 
-    QScreen *screen = QApplication::primaryScreen();
+    QScreen *screen = QGuiApplication::primaryScreen();
     if (screen) {
         const QRect g = screen->geometry();
         dialog->setFixedSize(g.width(), g.height());
@@ -339,8 +381,8 @@ bool ReadingMenuWatcher::eventFilter(QObject *obj, QEvent *ev) {
 // book is current returns the previous one. Nickel is asked instead.
 extern "C" __attribute__((visibility("default")))
 void _recap_setvolume_hook(void *_this, void *volume, void *bookmark) {
-    if (Content_getId && volume) {
-        g_currentBook = Content_getId(volume);
+    if (volume && (Content_getId || Content_getId6)) {
+        g_currentBook = Content_getId ? Content_getId(volume) : Content_getId6(volume, QString());
         logline("current book: " + g_currentBook);
     }
     ReadingView_setVolume(_this, volume, bookmark);
@@ -348,6 +390,9 @@ void _recap_setvolume_hook(void *_this, void *volume, void *bookmark) {
 
 static int recapInit() {
     QFile::remove(RECAP_LOG);
+    logline("RecapMod " NH_VERSION " (Qt " QT_VERSION_STR ")");
+    if (!Content_getId && !Content_getId6)
+        logline("Content::getId not found; the recap will use the last book closed");
     if (qApp) {
         qApp->installEventFilter(new ReadingMenuWatcher(qApp));
         logline("mod loaded, watching for ReadingMenuView");
@@ -397,9 +442,18 @@ static struct nh_dlsym RecapModDlsym[] = {
     { .name = "_ZN10TouchLabel18setHitStateEnabledEb",
       .out  = nh_symoutptr(TouchLabel_setHitStateEnabled),
       .desc = "TouchLabel::setHitStateEnabled" },
+    { .name = "_ZN11ReadingView12saveBookmarkEv",
+      .out  = nh_symoutptr(ReadingView_saveBookmark),
+      .desc = "ReadingView::saveBookmark",
+      .optional = true },
     { .name = "_ZNK7Content5getIdEv",
       .out  = nh_symoutptr(Content_getId),
-      .desc = "Content::getId" },
+      .desc = "Content::getId (firmware 4)",
+      .optional = true },
+    { .name = "_ZNK7Content5getIdERK7QString",
+      .out  = nh_symoutptr(Content_getId6),
+      .desc = "Content::getId (firmware 6)",
+      .optional = true },
     {0},
 };
 
